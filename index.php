@@ -1,8 +1,10 @@
 <?php
 $columns = [];
 $uniqueTypes = [];
+$uploadedFileName = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['sqlFile'])) {
+    $uploadedFileName = $_FILES['sqlFile']['name'] ?? 'uploaded_file.sql';
     $sqlContent = file_get_contents($_FILES['sqlFile']['tmp_name']);
 
     if (preg_match('/CREATE TABLE.*?\((.*?)\)[^)]*;/is', $sqlContent, $matches)) {
@@ -25,13 +27,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['sqlFile'])) {
         sort($uniqueTypes);
     }
 }
+
+
+$inputTypeMap = [
+    'int' => 'Number',
+    'tinyint' => 'Number',
+    'smallint' => 'Number',
+    'mediumint' => 'Number',
+    'bigint' => 'Number',
+    'decimal' => 'Number',
+    'float' => 'Number',
+    'double' => 'Number',
+    'varchar' => 'Text',
+    'char' => 'Text',
+    'text' => 'Text',
+    'mediumtext' => 'Text',
+    'longtext' => 'Text',
+    'datetime' => 'Date',
+    'timestamp' => 'Date',
+    'date' => 'Date',
+    'time' => 'Time',
+    'year' => 'Number',
+    'boolean' => 'Checkbox',
+    'bit' => 'Checkbox',
+    'enum' => 'Select',
+    'set' => 'Select',
+];
+
+foreach ($columns as &$col) {
+    if (preg_match('/^([a-z]+)\b/i', $col['type'], $match)) {
+        $baseType = strtolower($match[1]);
+    } else {
+        $baseType = strtolower($col['type']);
+    }
+
+    $col['friendly_input_type'] = $inputTypeMap[$baseType] ?? 'Text';
+}
+unset($col);
+
+
+$uniqueFriendlyInputTypes = [];
+foreach ($columns as $col) {
+    $uniqueFriendlyInputTypes[$col['friendly_input_type']] = true;
+}
+$uniqueFriendlyInputTypes = array_keys($uniqueFriendlyInputTypes);
+sort($uniqueFriendlyInputTypes);
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Upload SQL File</title>
+  <title>SQL Column Extractor</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
@@ -54,54 +101,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['sqlFile'])) {
     }
   </style>
 </head>
-<body class="bg-gray-100 p-10">
+<body class="bg-gray-50 text-gray-800 p-6">
 
-  <div class="max-w-5xl mx-auto bg-white shadow-md rounded-lg p-6">
-    <h2 class="text-2xl font-semibold text-gray-800 mb-8 text-center">
-      Upload Database (.sql)
-    </h2>
+  <div class="max-w-4xl mx-auto bg-white shadow-sm rounded-xl p-8 border border-gray-200">
+    <h1 class="text-2xl font-semibold text-center mb-6">Upload .SQL File</h1>
 
-    <form method="POST" enctype="multipart/form-data" class="mb-6">
-      <label for="sqlUpload" class="block mb-2 text-sm font-medium text-gray-700">Choose your .sql file:</label>
-      <input name="sqlFile" id="sqlUpload" type="file" accept=".sql"
-        class="block w-full text-sm text-gray-500 mb-4 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0
-               file:text-sm file:font-semibold file:bg-green-400 file:text-white hover:file:bg-green-700 cursor-pointer" />
-      <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-semibold px-4 py-2 rounded">
-        Upload & Parse
+    <form method="POST" enctype="multipart/form-data" class="space-y-4 mb-8" id="uploadForm">
+      <div>
+        <label for="sqlUpload" class="block text-sm font-medium mb-1">Choose a .sql file</label>
+        <input name="sqlFile" id="sqlUpload" type="file" accept=".sql"
+          class="w-full file:bg-blue-500 file:text-white file:px-4 file:py-2 file:rounded-md
+                 file:border-0 file:text-sm hover:file:bg-blue-600 transition cursor-pointer" />
+      </div>
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md">
+        Upload & Preview
       </button>
     </form>
 
     <?php if (!empty($columns)) : ?>
-      <form method="POST" id="finalForm">
-        <div class="overflow-x-auto">
-          <table class="min-w-full border border-gray-300 divide-y divide-gray-200">
-            <thead class="bg-green-500 text-white">
+      <form method="POST" id="finalForm" class="space-y-6">
+        <input type="hidden" id="originalFilename" value="<?= htmlspecialchars($uploadedFileName) ?>">
+
+        <div class="overflow-x-auto rounded-lg border border-gray-200">
+          <table class="min-w-full text-sm text-left">
+            <thead class="bg-gray-100 border-b text-xs font-semibold">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-semibold uppercase">Column Name</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold uppercase">Database Type</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold uppercase">Input Type</th>
-                <th class="px-6 py-3 text-center text-xs font-semibold uppercase">Show</th>
-                <th class="px-6 py-3 text-center text-xs font-semibold uppercase">Required</th>
+                <th class="px-4 py-2">Column Name</th>
+                <th class="px-4 py-2">DB Type</th>
+                <th class="px-4 py-2">Input Type</th>
+                <th class="px-4 py-2 text-center">Show</th>
+                <th class="px-4 py-2 text-center">Required</th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="divide-y">
               <?php foreach ($columns as $col): ?>
-                <tr>
-                  <td class="px-6 py-4 text-gray-700 font-medium"><?= htmlspecialchars($col['name']) ?></td>
-                  <td class="px-6 py-4 text-gray-700"><?= htmlspecialchars($col['type']) ?></td>
-                  <td class="px-6 py-4 w-48">
+                <tr class="hover:bg-gray-50">
+                  <td class="px-4 py-2"><?= htmlspecialchars($col['name']) ?></td>
+                  <td class="px-4 py-2"><?= htmlspecialchars($col['type']) ?></td>
+                  <td class="px-4 py-2 w-52">
                     <select class="input-type w-full select2">
-                      <?php foreach ($uniqueTypes as $type): ?>
-                        <option value="<?= htmlspecialchars($type) ?>" <?= $type === $col['type'] ? 'selected' : '' ?>>
-                          <?= htmlspecialchars($type) ?>
+                      <?php foreach ($uniqueFriendlyInputTypes as $friendlyType): ?>
+                        <option value="<?= htmlspecialchars($friendlyType) ?>" <?= $friendlyType === $col['friendly_input_type'] ? 'selected' : '' ?>>
+                          <?= htmlspecialchars($friendlyType) ?>
                         </option>
                       <?php endforeach; ?>
                     </select>
                   </td>
-                  <td class="px-6 py-4 text-center">
-                    <input type="checkbox" checked class="h-5 w-5 text-green-600 rounded" />
+                  <td class="px-4 py-2 text-center">
+                    <input type="checkbox" checked class="h-5 w-5 text-blue-600 rounded" />
                   </td>
-                  <td class="px-6 py-4 text-center">
+                  <td class="px-4 py-2 text-center">
                     <input type="checkbox" checked class="h-5 w-5 text-red-600 rounded" />
                   </td>
                 </tr>
@@ -110,15 +159,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['sqlFile'])) {
           </table>
         </div>
 
-        <div class="flex justify-center mt-6">
-          <button type="submit"
-            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded">
+        <div class="text-center">
+          <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-md">
             Generate JSON
           </button>
         </div>
       </form>
-
-      <div id="output" class="mt-8 bg-gray-100 p-4 rounded border border-gray-300 text-sm text-gray-800 hidden"></div>
     <?php endif; ?>
   </div>
 
@@ -152,8 +198,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['sqlFile'])) {
           });
         });
 
-        const output = JSON.stringify(data, null, 2);
-        $('#output').removeClass('hidden').html(`<pre>${output}</pre>`);
+        const originalFile = $('#originalFilename').val() || 'uploaded_file.sql';
+
+        const form = $('<form>', {
+          method: 'POST',
+          action: 'parse.php'
+        });
+
+        form.append($('<input>', {
+          type: 'hidden',
+          name: 'jsonData',
+          value: JSON.stringify(data)
+        }));
+
+        form.append($('<input>', {
+          type: 'hidden',
+          name: 'originalFilename',
+          value: originalFile
+        }));
+
+        $('body').append(form);
+        form.submit();
       });
     });
   </script>
